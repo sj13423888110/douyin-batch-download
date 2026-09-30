@@ -1,7 +1,7 @@
 ---
 name: douyin-batch-download
 description: 抖音按博主主页批量下载全部作品。CDP 接管用户已登录的 Chrome，绕过 a_bogus 签名风控，捕获作品列表 API 并下载视频/图集；也可用随附的 Chrome 插件免终端操作。触发词：下载抖音、抖音博主、批量下载抖音、抖音主页视频、douyin download。
-version: 1.3.0
+version: 2.0.0
 ---
 
 # 抖音博主作品批量下载（CDP 接管已登录 Chrome）
@@ -44,54 +44,60 @@ node scripts/dy-dl.mjs "<链接>" --no-dl                    # 只采集清单�
 
 输入支持四种形态，自动识别：完整主页 URL、`v.douyin.com` 短链、App 分享文案（整段粘贴即可）、sec_uid 本身。单条视频分享链接会被识别并拒绝（工具只做博主全量）。
 
-## 插件形态：两个 Chrome 层面的硬约束
+## 插件形态：**不要用 `chrome.downloads`**（v2.0.0 结论）
 
-插件下载依赖 `chrome.downloads`，有两个**用代码解决不了**的坑，必须让用户改浏览器侧配置：
+**结论先行**：批量下载场景下 `chrome.downloads` 不可用。它的落盘行为受三层外部因素支配——
+浏览器全局偏好（`download.prompt_for_download`）、下载管理器扩展、崩溃后的下载恢复队列——
+插件无法从代码层控制。实测踩过的坑（2026-09-30，用户机器）：
 
-1. **`saveAs:false` 压不住"下载前询问每个文件的保存位置"**
-   这是 Chrome 的**用户级偏好** `download.prompt_for_download`，优先级高于扩展 API。开着时每个文件都弹另存为对话框，且对话框会丢掉 `filename` 里的子目录结构。
-   判定方式：读 `%LOCALAPPDATA%\Google\Chrome\User Data\Default\Preferences` 里的 `download.prompt_for_download`。旁证是同一文件里 `savefile.default_directory` 会变成插件建议的子目录路径。
-   修复（Chrome 必须**完全退出**，否则退出时会被内存覆盖）：
+- 即使 `prompt_for_download=false`（且 Chrome 三次自行回写偏好文件时都保持 false）、无任何注册表/云策略、
+  代码传了 `saveAs:false`，下载**仍然逐个弹「另存为」**，且弹窗会丢掉 `filename` 里的子目录结构
+- 强杀 Chrome 后，处于"未确认保存位置"状态的下载会被**恢复并重新弹窗**，取消一条弹下一条，
+  表现为"明明已经修好了却还在弹"的幽灵弹窗
+- 判断"下载是否正常"**不能用「字节数是否在涨」**：等待用户确认保存位置期间，Chrome 已经在往
+  临时文件里灌数据（实测等待中单个临时文件涨到 113MB），所以任何"在传就算正常"的刹车逻辑都会误判，
+  一条接一条触发出去。曾因此堆出 **101 个临时文件 / 12GB 垃圾**，浏览器 UI 卡死到弹窗无法取消，
+  只能任务管理器强杀。
 
-   ```python
-   import json, os, shutil
-   p = os.path.join(os.environ['LOCALAPPDATA'], 'Google/Chrome/User Data/Default/Preferences')
-   shutil.copy2(p, p + '.bak')            # 先备份
-   d = json.load(open(p, encoding='utf-8'))
-   d.setdefault('download', {})['prompt_for_download'] = False
-   json.dump(d, open(p, 'w', encoding='utf-8'), ensure_ascii=False)
-   ```
+> 核心教训：**用「是否在传输」判断「是否被拦」是无效的——被拦时数据照样在传。**
 
-   多 Profile 要遍历 `Default` 与 `Profile *`。仓库提供了现成脚本 `tools/fix-chrome-download-prompt.cmd`（会自己等 Chrome 退出）。
+### 正确做法：扩展页 + File System Access API 直接写盘
 
-2. **IDM / 迅雷 / NeatDownloadManager 等下载管理器扩展会接管下载**
-   表现为 `chrome.downloads` 记录 `interrupted` + `USER_CANCELED`，文件落到下载管理器自己的目录、丢子目录。让用户临时停用这些扩展。
+在扩展页（`chrome-extension://` 页面是安全上下文）里：
 
-3. **⚠️ 雪崩陷阱：`chrome.downloads.download()` 在被询问时「立即返回」**
-   这是 2026-09-30 实际闯祸的设计缺陷，务必守住：
-   当 `prompt_for_download=true` 时，`download()` **不等用户确认就 resolve 一个 id**。
-   如果像这样逐条 await：
+```js
+const root = await showDirectoryPicker({ id: 'dy-dl', mode: 'readwrite' });  // 需用户手势，选一次
+const dir  = await root.getDirectoryHandle('douyin_<昵称>', { create: true });
+const fh   = await dir.getFileHandle(name, { create: true });
+const w    = await fh.createWritable();      // 写临时文件，close() 才原子替换；abort() 自动丢弃
+const resp = await fetch(cdnUrl, { credentials: 'omit' });
+const reader = resp.body.getReader();
+for (;;) { const { done, value } = await reader.read(); if (done) break; await w.write(value); }
+await w.close();
+```
 
-   ```js
-   for (const it of list) {
-     await chrome.downloads.download({ url, saveAs: false });   // ← 立刻返回，不阻塞
-     await sleep(600);
-   }
-   ```
+要点：
+- **目录句柄存 IndexedDB**（`chrome.storage` 存不了 `FileSystemHandle`）；Chrome 重启后
+  `queryPermission()` 变 `prompt`，需要用户点一次按钮触发 `requestPermission()`（必须用户手势）
+- 挑器必须在**扩展页/弹窗这类有用户手势的文档**里调用，Service Worker 里没有这个 API
+- 跨域 fetch 依赖 `host_permissions`（`*.douyinvod.com` / `*.douyinpic.com` / `*.douyinstatic.com`）
+- 重名文件用 `getFileHandle(name, {create:false})` 探测 + 跳过，天然解决重复下载
+- 并发 2-3 个即可；`createWritable` 的原子替换意味着**中断不留残渣**，不需要事后清理
 
-   就会以 600ms/个 的速度把**整个清单全部触发出去**。274 个作品 = 274 个挂起下载
-   + 274 个另存为对话框，Chrome UI 被拖死（用户描述"像中病毒一样，无法取消暂停，
-   只能在任务管理器结束任务"），`Downloads` 里堆出 500MB+ 的 UUID 命名 `.tmp` 残渣。
+代价：下载页标签要保持打开；这是可接受的（换来的是零弹窗、零垃圾、可跳过已存在）。
 
-   **正确做法**：每触发一个就核验它**是否真的在传数据**，第一个被拦就中止：
-   ```js
-   // paused 连续 4 次 或 10 秒内 bytesReceived 无增长 → blocked
-   // 首个轮询就看到 bytesReceived 增长 → started（放行，不拖慢）
-   // detail 命中 USER_CANCELED → 立即停（下载管理器接管）
-   ```
-   容忍度必须设成 **1**（不是 3）：环境不对时多触发两个就是多两个对话框。
+### v1.x 遗留：这些坑仍会在别处遇到
 
-**Chrome 没有"第一次询问后记住"这种机制**，只有"询问"和"不询问"两态。用户说"希望一次确定、全部下载"，唯一落点是把偏好切成不询问。
+1. Chrome **没有"第一次询问后记住"**这种机制，只有"询问"和"不询问"两态。
+   想让用户"一次确定、全部下载"，靠 `saveAs:false` 是做不到的（见上）。
+2. IDM / 迅雷 / NeatDownloadManager 扩展接管时，`chrome.downloads` 会记 `USER_CANCELED`。
+   禁用状态可从 `Secure Preferences` 的 `extensions.settings.<id>.disable_reasons` 判断（`[1]` = 用户禁用）。
+3. **History 的 `downloads` 表是最好的取证源**：`target_path`（空 = 保存位置未确认）、
+   `current_path`（进行中时是临时文件名）、`by_ext_id` / `by_ext_name`（**发起扩展**）、
+   `state`（1=完成 2=中断）、`interrupt_reason`（**40 = USER_CANCELED**、50 = CRASH）、
+   `end_time`（`start→end` 可判断是"秒完成"还是"等人工点击"）。
+   排查"弹窗是谁弹的"时，比对**弹窗里的文件名与 `target_path`**最快：
+   插件建议的文件名带自己的前缀（如 `005_`），没有前缀的就是页面侧发起的下载。
 
 ### 已经卡死时的收尾
 
@@ -99,10 +105,9 @@ node scripts/dy-dl.mjs "<链接>" --no-dl                    # 只采集清单�
 `tools/emergency-fix.cmd`（先手动输入 y 确认）：
 1. `taskkill /F /IM chrome.exe /T` 强杀全部进程
 2. 关掉 `prompt_for_download`
-3. 删 `History` 库里 `downloads` 表 `state != 1` 的记录（未完成的挂起项，保留已完成历史）
-4. `Downloads\*.tmp` 移入回收站
-
-Chrome 不会自动重试这些挂起下载，所以强杀后不删记录也不会再产生垃圾，但删掉更清爽。
+3. 备份 `History`，再删其中 `downloads` 表 `state != 1` 的记录（未完成的挂起项，保留已完成历史）
+   —— 不删的话，下次启动 Chrome 会**恢复这些未确认下载并重新弹窗**
+4. `Downloads\*.tmp` 移入回收站（先报告体积，12GB 级要让用户知道）
 
 ### Windows 批处理的行尾（易漏）
 

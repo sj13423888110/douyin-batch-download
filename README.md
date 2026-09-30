@@ -23,18 +23,15 @@
 2. **Windows + Chrome**（其他平台未验证）
 3. Chrome 地址栏打开 `chrome://inspect/#remote-debugging`，勾选 **"Allow remote debugging for this browser instance"**（仅 CLI 需要；插件不需要）
 4. 在这个 Chrome 里**登录抖音**
-5. **重要（插件批量下载）**：到 `chrome://settings/downloads` 关闭 **"下载前询问每个文件的保存位置"**，并暂停 IDM / NeatDownloadManager 等下载管理器扩展——否则每个文件都会弹另存为对话框、或被下载管理器接管取消（`USER_CANCELED`）。已提供一键修复脚本，见下节。
+5. ~~到 `chrome://settings/downloads` 关闭「下载前询问每个文件的保存位置」~~ —— **v2.0.0 起插件已不需要**：下载改为 File System Access 直接写盘，完全绕开浏览器下载系统，不再有「另存为」弹窗、不再产生 `.tmp` 残渣、也不受 IDM/迅雷等下载管理器影响。只需在下载页里选一次保存文件夹。
 
-## 一键修复：关掉「下载前询问保存位置」
+## 浏览器下载系统相关的历史问题（v1.x，已不再影响）
 
-这个 Chrome 设置**优先级高于扩展 API**：`chrome.downloads.download({saveAs:false})` 压不住它，所以插件批量下载会逐个弹另存为窗口。用脚本一次改掉：
+v1.x 走 `chrome.downloads` API，它的落盘行为受浏览器全局偏好、下载管理器扩展、崩溃恢复队列三层外部因素支配。实测在某些配置下即使 `prompt_for_download=false` + `saveAs:false` 仍会逐个弹「另存为」，且等待确认期间数据已在写入临时文件，导致刹车逻辑误判、雪崩式堆积（实测 101 个临时文件 / 12GB 垃圾，浏览器卡死只能强杀）。
 
-1. **完全退出 Chrome**（含托盘驻留进程）
-2. 双击 `tools/fix-chrome-download-prompt.cmd`
+已被拖死时，用 `tools/emergency-fix.cmd` 一键收尾（强杀 Chrome → 关询问设置 → 清未完成下载记录（先备份 History）→ 临时文件移入回收站）。
 
-脚本会等 Chrome 退出后自动完成，改动前备份 `Preferences`。它也会自动处理多 Profile。改完重启 Chrome 即生效，此后浏览器所有下载都不再逐个询问。
-
-> 不想退出 Chrome 的话，手动改只需三步：`chrome://settings/downloads` → 取消勾选「下载前询问每个文件的保存位置」。效果相同。
+`tools/fix-chrome-download-prompt.cmd` 是只改那一条浏览器偏好（关 Chrome 后双击、自动备份）的轻量脚本，仍可单独使用。
 
 ## 使用
 

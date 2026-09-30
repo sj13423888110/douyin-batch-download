@@ -114,6 +114,7 @@ def clear_pending():
         if not os.path.isfile(h):
             continue
         try:
+            shutil.copy2(h, h + ".bak-" + STAMP)  # 删记录前先备份
             con = sqlite3.connect(h, timeout=8)
             cur = con.cursor()
             cur.execute("SELECT COUNT(*) FROM downloads WHERE state != 1")
@@ -121,7 +122,7 @@ def clear_pending():
             if n:
                 cur.execute("DELETE FROM downloads WHERE state != 1")
                 con.commit()
-                print("  [%s] 清掉 %d 条未完成下载记录（已完成的保留）" % (name, n))
+                print("  [%s] 清掉 %d 条未完成下载记录（已完成的保留，已备份 History）" % (name, n))
                 total += n
             con.close()
         except Exception as e:
@@ -169,6 +170,23 @@ def main():
     print("=" * 62)
     print()
 
+    # 先报告将要清理的垃圾体积，让用户心里有数
+    junk = []
+    if os.path.isdir(DOWNLOADS):
+        junk = [f for f in os.listdir(DOWNLOADS)
+                if f.lower().endswith(".tmp") and os.path.isfile(os.path.join(DOWNLOADS, f))]
+    junk_size = 0
+    for f in junk:
+        try:
+            junk_size += os.path.getsize(os.path.join(DOWNLOADS, f))
+        except OSError:
+            pass
+    if junk:
+        print("待清理的下载中间文件：%d 个，合计 %.1f GB（将移入回收站，可还原）" % (
+            len(junk), junk_size / 1073741824))
+        print("注意：回收站会继续占用等量磁盘空间，确认文件没问题后可自行清空回收站。")
+        print()
+
     print("[1/4] 结束 Chrome")
     if not kill_chrome():
         print()
@@ -193,9 +211,10 @@ def main():
     print("全部完成。接下来：")
     print("  1. 重新打开 Chrome（可以「恢复上次会话」找回标签页）")
     print("  2. 到 chrome://extensions 把抖音下载插件「重新加载」")
-    print("     —— 插件已升级到 v1.1.0，第一个下载被拦就会自动中止，")
-    print("        不会再出现一口气触发几百个任务把浏览器拖死的情况")
-    print("  3. 确认 chrome://settings/downloads 里「下载前询问每个文件的保存位置」是关闭的")
+    print("     —— 插件已升级到 v2.0.0，改成直接写盘：")
+    print("        不再经过浏览器下载系统，不会再有「另存为」弹窗，")
+    print("        也不再产生 .tmp 残渣，已存在的文件会自动跳过")
+    print("  3. 到 chrome://downloads 点右上角 ⋮ → 清除列表，防止旧记录再被恢复")
     print("=" * 62)
     return 0
 

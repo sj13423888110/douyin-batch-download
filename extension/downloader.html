@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>抖音作品批量下载</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 28px 40px;
+    font: 14px/1.6 "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+    color: #1f2328; background: #f6f7f9;
+  }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .sub { color: #59636e; font-size: 13px; margin-bottom: 18px; }
+  .card {
+    background: #fff; border: 1px solid #e3e6ea; border-radius: 10px;
+    padding: 16px 18px; margin-bottom: 14px;
+  }
+  .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  button {
+    font: inherit; padding: 7px 14px; border-radius: 7px; cursor: pointer;
+    border: 1px solid #d0d5da; background: #fff; color: #1f2328;
+  }
+  button:hover:not(:disabled) { background: #f2f4f6; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+  button.primary:hover:not(:disabled) { background: #1a5fd0; }
+  button.danger { background: #c0392b; border-color: #c0392b; color: #fff; }
+  button.danger:hover:not(:disabled) { background: #a93226; }
+  #dirName { font-family: Consolas, monospace; font-size: 13px; color: #1f6feb; }
+  .muted { color: #59636e; }
+  .bar { height: 10px; background: #e8ebee; border-radius: 6px; overflow: hidden; margin: 12px 0 6px; }
+  .bar > i { display: block; height: 100%; width: 0; background: #1f6feb; transition: width .25s; }
+  .stat { display: flex; gap: 22px; font-size: 13px; flex-wrap: wrap; }
+  .stat b { font-weight: 600; }
+  #log {
+    margin: 0; padding: 12px 14px; max-height: 340px; overflow: auto;
+    background: #0f1419; color: #d7dde3; border-radius: 8px;
+    font: 12px/1.55 Consolas, "Courier New", monospace; white-space: pre-wrap; word-break: break-all;
+  }
+  #log .ok { color: #58d68d; }
+  #log .skip { color: #8c98a4; }
+  #log .fail { color: #ec7063; }
+  #log .info { color: #7fb3ff; }
+  .tip { font-size: 13px; color: #59636e; margin-top: 8px; }
+  .hide { display: none !important; }
+</style>
+</head>
+<body>
+  <h1>抖音作品批量下载</h1>
+  <div class="sub" id="jobInfo">正在读取任务…</div>
+
+  <div class="card">
+    <div class="row">
+      <button id="pick" class="primary">选择保存文件夹</button>
+      <button id="reuse" class="hide">授权上次的文件夹</button>
+      <span id="dirName" class="muted">尚未选择</span>
+    </div>
+    <div class="tip">
+      选一次即可：文件会直接写进该文件夹（自动建 <code>douyin_&lt;博主名&gt;</code> 子目录），
+      <b>不经浏览器下载，因此不会再有「另存为」弹窗</b>。已存在的同名文件会跳过。
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <button id="start" class="primary" disabled>开始下载</button>
+      <button id="stop" class="danger hide">停止</button>
+      <span id="phase" class="muted">等待开始</span>
+    </div>
+    <div class="bar"><i id="bar"></i></div>
+    <div class="stat">
+      <span>进度 <b id="sProg">0 / 0</b></span>
+      <span>成功 <b id="sOk">0</b></span>
+      <span>跳过 <b id="sSkip">0</b></span>
+      <span>失败 <b id="sFail">0</b></span>
+      <span>已下载 <b id="sBytes">0 MB</b></span>
+      <span>速度 <b id="sSpeed">—</b></span>
+    </div>
+  </div>
+
+  <pre id="log"></pre>
+
+  <script src="downloader.js"></script>
+</body>
+</html>

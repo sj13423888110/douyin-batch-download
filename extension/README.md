@@ -16,48 +16,51 @@
 
 1. 进入博主主页 → 点插件图标 → **开始采集全部作品**（页面自动滚动，可关闭弹窗）
 2. 采集完成后点 **下载全部视频**（或勾选"图集帖同时保存图片和音乐"）
-3. 文件保存到 Chrome 下载目录下的 `douyin_<博主昵称>/`
+3. 会新开一个**下载页**：第一次点「选择保存文件夹」选个目录（例如「下载」），之后点「开始下载」
+4. 文件写入 `<所选目录>/douyin_<博主昵称>/`
 
-## 使用前必须检查（否则批量下载会失败）
+## v2.0.0：改为直接写盘，彻底不再有「另存为」弹窗
 
-- **关闭"下载前询问每个文件的保存位置"**：`chrome://settings/downloads`。实测开启时即使 API 传了 `saveAs:false` 仍会每个文件弹另存为对话框（且对话框会丢掉子文件夹结构）。
-  **注意**：这是 Chrome 的**用户级偏好**，优先级高于扩展 API，插件无法用任何代码压住它。仓库根目录提供了 `tools/fix-chrome-download-prompt.cmd`，关掉 Chrome 后双击即可自动改掉（会先备份 `Preferences`）。
-- **暂停 IDM Integration Module / NeatDownloadManager 等下载管理器扩展**：它们会取消浏览器原生下载再自己接管（表现为 `chrome.downloads` 记录 `interrupted/USER_CANCELED`，文件落到下载管理器自己的目录、丢失子目录）。用完插件再启用即可。
+**为什么改**：v1.x 走 `chrome.downloads`。这个 API 的落盘行为受三层外部因素支配——浏览器全局偏好、下载管理器扩展、崩溃后的下载恢复队列。实测在某台机器上即使 `prompt_for_download=false` 且传了 `saveAs:false`，仍会**逐个弹「另存为」**；更糟的是等待确认期间 Chrome 已在往临时文件灌数据，所以"字节在涨就放行"的刹车逻辑会误判成正常下载，于是一条接一条往外触发，最终堆出 **101 个临时文件、12GB 垃圾**、浏览器 UI 卡死到无法取消弹窗、只能强杀。
 
-## v1.1.x：下载被拦时自动刹车
+**现在**：`background.js` 只负责把清单交给新开的下载页，实际下载由 `downloader.js` 用 **File System Access API** 完成：
 
-上一版有个**严重设计缺陷**，2026-09-30 实际闯了祸：
-
-> `prompt_for_download=true` 时，`chrome.downloads.download()` 会**立即返回**一个 id 而**不等待**用户确认。旧版逐条 `await` 因此以 600ms/个 的速度继续触发，274 个作品 = 274 个挂起下载 + 274 个另存为对话框，Chrome 被拖死到只能强杀，`Downloads` 里留下 500MB+ 的 `.tmp` 残渣。
-
-现在 `background.js` 会逐个核验下载是否**真的在传数据**：
-
-| 判定 | 触发条件 | 动作 |
+| | v1.x（chrome.downloads） | v2.0.0（File System Access） |
 |---|---|---|
-| `started` / `complete` | 首个轮询就看到 `bytesReceived` 增长，或已下完 | 正常，立即放行，不拖慢 |
-| `blocked` | `paused` 连续 4 次，或 10 秒内无任何字节增长 | **第 1 次被拦就中止**（容忍度 = 1），避免雪崩 |
-| `interrupted` | 报错；其中 `USER_CANCELED` 单独识别 | `USER_CANCELED` 立即中止（= 下载管理器接管）；其他错误连续 3 次中止 |
+| 弹「另存为」 | 受浏览器偏好影响，可能每个文件都弹 | **不会**，选一次文件夹即可 |
+| 临时垃圾 | 崩溃/取消后残留 `.tmp` | 用 `createWritable` 写临时文件，`close()` 才原子替换；取消自动丢弃 |
+| 重名文件 | `uniquify` 生成 `(1)`、`(2)` 副本 | 已存在同名文件**自动跳过** |
+| 进度 | 只能在下载气泡里看 | 页面里有进度条、速度、成功/跳过/失败计数、实时日志 |
+| 下载管理器劫持 | IDM/NDM 会取消原生下载（`USER_CANCELED`） | 不经过下载系统，**不受影响** |
 
-中止后弹窗里会直接说明原因。
+代价：下载期间那个下载页标签**要保持打开**（关掉即中断），首次使用需点一次「选择保存文件夹」（浏览器重启后可能要再点一次"授权上次的文件夹"）。
 
-> 如果已经踩过坑、浏览器卡死，用根目录 `tools/emergency-fix.cmd` 一键收尾。
+### 历史教训（保留备查）
+
+v1.1.x 加了"第一个被拦就中止"的刹车，但刹车依赖「字节数是否增长」判断，而 Chrome 在**等待用户确认保存位置时会持续把数据写进临时文件** —— 判据不成立，刹车形同虚设。**教训：用"是否在传输"判断"是否被拦"是无效的，因为被拦时数据照样在传。** 正确做法是绕开这套系统。
+
+> 浏览器已被拖死时，用根目录 `tools/emergency-fix.cmd` 一键收尾（强杀 Chrome → 关询问设置 → 清未完成下载记录（先备份 History）→ 临时文件移入回收站）。
 
 ## 工作原理
 
 ```
-hook.js     (MAIN world, document_start)  挂钩 fetch/XHR，捕获 /aweme/v1/web/aweme/post/ 响应
+hook.js        (MAIN world, document_start)  挂钩 fetch/XHR，捕获 /aweme/v1/web/aweme/post/ 响应
     │  window.postMessage 跨世界传精简作品对象
     ▼
-content.js  (ISOLATED)  汇总清单；自动滚动 .route-scroll-container 触发分页（每页 18 条）
+content.js     (ISOLATED)  汇总清单；自动滚动 .route-scroll-container 触发分页（每页 18 条）
     │  chrome.runtime 消息
     ▼
-background.js (Service Worker)  逐个探测 CDN 直链（部分候选 403），调 downloads API 下载
+background.js  (Service Worker)  把清单写进 chrome.storage.local，新开下载页
+    ▼
+downloader.html/js  (扩展页)  showDirectoryPicker 选一次目录 -> fetch 各 CDN 直链
+                              -> createWritable 流式写盘（带进度/速度/跳过已存在）
 ```
 
 - 签名由页面自己的 JS 生成，插件不构造任何签名请求、不接触 Cookie
 - `window.scrollBy` 在抖音网页版无效，必须滚 `.route-scroll-container` 容器（实测踩坑）
 - 图集帖判定用 `images[]` 字段（`aweme_type` 不可靠，实测有 type=68 的图集）
 - CDN 直链无需 Referer/Cookie，但候选列表中部分域名 403，必须逐个探测
+- 目录句柄存在 IndexedDB（`chrome.storage` 存不了 FileSystemHandle）
 
 ## 与 CLI 版的关系
 

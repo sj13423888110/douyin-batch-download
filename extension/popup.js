@@ -62,9 +62,12 @@ async function download(includeGallery) {
   if (!tabId) return;
   const res = await chrome.tabs.sendMessage(tabId, { type: 'getItems' }).catch(() => null);
   if (!res || !res.count) { say('没有可下载的作品，请先采集。'); return; }
-  const r = await chrome.runtime.sendMessage({ type: 'download', items: res.items, includeGallery, nickname: res.nickname }).catch((e) => null);
-  if (!r || !r.ok) { say('下载启动失败：' + ((r && r.error) || '未知错误')); return; }
-  say('已开始下载 ' + r.total + ' 个作品 → 下载到「下载」目录 douyin_<博主名>/。可关闭此窗口。');
+  const r = await chrome.runtime
+    .sendMessage({ type: 'openDownloader', items: res.items, includeGallery, nickname: res.nickname })
+    .catch(() => null);
+  if (!r || !r.ok) { say('打开下载页失败：' + ((r && r.error) || '未知错误')); return; }
+  say('已新建下载页，共 ' + r.total + ' 个作品。请在新页面里选一次保存文件夹，然后点「开始下载」。');
+  window.close();
 }
 
 $('dlVideo').addEventListener('click', () => download(false));
@@ -73,9 +76,7 @@ $('dlAll').addEventListener('click', () => download(true));
 chrome.runtime.onMessage.addListener((m) => {
   if (m.type === 'progress') { $('count').textContent = m.count; render(m); }
   if (m.type === 'done') { $('count').textContent = m.count; if (m.nickname) $('nickname').textContent = '博主：' + m.nickname; setButtons({ count: m.count }); say('采集完成：' + m.count + ' 条。'); }
-  if (m.type === 'dlprogress') say('下载进度 ' + m.done + '/' + m.total + '（成功 ' + m.ok + ' / 失败 ' + m.fail + '）');
-  if (m.type === 'dlabort') say('已中止（进行到 ' + m.done + '/' + m.total + '，成功 ' + m.ok + ' / 失败 ' + m.fail + '）：' + m.reason);
-  if (m.type === 'dlend') say('下载结束：成功 ' + m.ok + ' / 失败 ' + m.fail + '，共 ' + m.total + ' 个作品。文件在「下载」目录。');
+  if (m.type === 'dyProgress') say('下载进度 ' + m.done + '/' + m.total + '（成功 ' + m.ok + ' / 跳过 ' + m.skip + ' / 失败 ' + m.fail + '）');
 });
 
 init();

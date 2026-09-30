@@ -24,17 +24,23 @@
   **注意**：这是 Chrome 的**用户级偏好**，优先级高于扩展 API，插件无法用任何代码压住它。仓库根目录提供了 `tools/fix-chrome-download-prompt.cmd`，关掉 Chrome 后双击即可自动改掉（会先备份 `Preferences`）。
 - **暂停 IDM Integration Module / NeatDownloadManager 等下载管理器扩展**：它们会取消浏览器原生下载再自己接管（表现为 `chrome.downloads` 记录 `interrupted/USER_CANCELED`，文件落到下载管理器自己的目录、丢失子目录）。用完插件再启用即可。
 
-## v1.1.0：下载被拦时自动刹车
+## v1.1.x：下载被拦时自动刹车
 
-上一版在设置不对时会闷头跑完几百个文件、留下一地零字节残渣。现在 `background.js` 会逐个核验下载是否**真的开始传输**：
+上一版有个**严重设计缺陷**，2026-09-30 实际闯了祸：
+
+> `prompt_for_download=true` 时，`chrome.downloads.download()` 会**立即返回**一个 id 而**不等待**用户确认。旧版逐条 `await` 因此以 600ms/个 的速度继续触发，274 个作品 = 274 个挂起下载 + 274 个另存为对话框，Chrome 被拖死到只能强杀，`Downloads` 里留下 500MB+ 的 `.tmp` 残渣。
+
+现在 `background.js` 会逐个核验下载是否**真的在传数据**：
 
 | 判定 | 触发条件 | 动作 |
 |---|---|---|
-| `started` / `complete` | `state=in_progress && paused=false`，或已下完 | 正常，立即返回不拖慢速度 |
-| `blocked` | 6 秒内一直停在暂停态 | 连续 3 次即中止，提示"多半是开着「下载前询问保存位置」或被下载管理器接管" |
-| `interrupted` | 被取消或报错 | 连续 3 次即中止，带上 Chrome 给出的错误码（如 `USER_CANCELED`） |
+| `started` / `complete` | 首个轮询就看到 `bytesReceived` 增长，或已下完 | 正常，立即放行，不拖慢 |
+| `blocked` | `paused` 连续 4 次，或 10 秒内无任何字节增长 | **第 1 次被拦就中止**（容忍度 = 1），避免雪崩 |
+| `interrupted` | 报错；其中 `USER_CANCELED` 单独识别 | `USER_CANCELED` 立即中止（= 下载管理器接管）；其他错误连续 3 次中止 |
 
-中止后弹窗里会直接说明原因，不再需要猜。
+中止后弹窗里会直接说明原因。
+
+> 如果已经踩过坑、浏览器卡死，用根目录 `tools/emergency-fix.cmd` 一键收尾。
 
 ## 工作原理
 

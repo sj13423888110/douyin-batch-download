@@ -2,8 +2,13 @@
 let busy = false;
 
 // 连续异常达到阈值就中止，避免在设置/环境不对时白跑几百个文件、留下一地残渣
-const MAX_BLOCKED = 3;      // 一直停在暂停态：多半是「下载前询问保存位置」开着
-const MAX_INTERRUPTED = 3;  // 被取消：多半是 IDM / 迅雷等下载管理器把下载接管走了
+// 2026-09-30 事故：旧版没有这层保护，prompt_for_download 开着时
+// chrome.downloads.download() 会「立即返回」而不等用户确认，于是每 600ms 触发一个，
+// 274 个作品 = 274 个挂起的下载 + 274 个另存为对话框，把 Chrome 直接拖死到只能强杀。
+// 因此 blocked 的容忍度设为 1：环境不对就第一个停。
+const MAX_BLOCKED = 1;      // 停在暂停态：基本等同「下载前询问保存位置」开着
+const MAX_INTERRUPTED = 3;  // 被取消/失败：偶发网络问题，容忍几次
+const CANCEL_REASONS = /USER_CANCEL|USER_CANCELED/i;  // 这个错误码专指环境问题，立刻停
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (!msg || typeof msg.type !== 'string') return;
@@ -43,12 +48,14 @@ function seg(s, fallback) {
 
 // 发起下载并判断它「是否真的开始跑」：
 //   complete    小文件已下完
-//   started     已在传输中（正常，立即返回）
-//   blocked     长时间停在暂停态 —— 判定被弹窗 / 下载管理器拦住
+//   started     数据已在传输（正常，放行）
+//   blocked     10 秒内既没传数据也没报错 —— 判定被弹窗 / 下载管理器拦住
 //   interrupted 被取消或报错
-// 关键：saveAs:false 压不住 Chrome 的全局偏好
-// 「下载前询问每个文件的保存位置」(chrome://settings/downloads)，
-// 那种情况下载会挂着不走，只能靠 blocked 识别出来。
+//
+// 为什么不能只靠 saveAs:false：Chrome 的全局偏好
+// 「下载前询问每个文件的保存位置」(chrome://settings/downloads) 优先级更高，
+// 压不住。此时 download() 仍会「立即返回」一个 id，下载被挂成 paused 并弹出对话框，
+// 所以必须逐个核验真实传输状态，否则会以 600ms/个 的速度把整个队列全触发出去。
 async function dl(url, filename) {
   let id;
   try {
@@ -58,19 +65,30 @@ async function dl(url, filename) {
   }
   if (typeof id !== 'number' || id <= 0) return { state: 'interrupted', detail: '未取得下载 ID' };
 
-  const deadline = Date.now() + 6000;
-  let sawPaused = false;
+  const deadline = Date.now() + 10000;
+  let prevBytes = 0, pausedTicks = 0;
+
   while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 400));
     let it = null;
     try { [it] = await chrome.downloads.search({ id }); } catch (e) { break; }
     if (!it) return { state: 'started' };
     if (it.state === 'complete') return { state: 'complete' };
     if (it.state === 'interrupted') return { state: 'interrupted', detail: it.error || 'INTERRUPTED' };
-    if (it.state === 'in_progress' && !it.paused) return { state: 'started' };
-    if (it.paused) sawPaused = true;
-    await new Promise((r) => setTimeout(r, 200));
+
+    // 信号一：被 Chrome 挂成暂停（等待另存为对话框时的典型表现）
+    if (it.paused) {
+      pausedTicks++;
+      if (pausedTicks >= 4) return { state: 'blocked', detail: '下载被挂成暂停状态' };
+      continue;
+    }
+
+    // 信号二：字节数在涨 = 真的在传，立即放行（不拖慢正常下载）
+    const got = it.bytesReceived || 0;
+    if (got > prevBytes) return { state: 'started' };
+    prevBytes = got;
   }
-  return sawPaused ? { state: 'blocked', detail: '长时间暂停' } : { state: 'started' };
+  return { state: 'blocked', detail: '10 秒内没有开始传输' };
 }
 
 async function processQueue(list, nickname) {
@@ -87,14 +105,17 @@ async function processQueue(list, nickname) {
     if (r.state === 'blocked') {
       interRun = 0; blockedRun++;
       if (blockedRun >= MAX_BLOCKED) {
-        abortReason = '连续 ' + blockedRun + ' 个下载一直停在暂停状态。'
-          + '基本可以确定是浏览器开着「下载前询问每个文件的保存位置」，或被 IDM / 迅雷等下载管理器接管了。';
+        abortReason = '第 ' + i + ' 个下载一直停在暂停状态（数据没在传）。'
+          + '几乎可以确定是浏览器开着「下载前询问每个文件的保存位置」，或被 IDM / 迅雷等下载管理器接管了。'
+          + '已立即停止，避免继续堆积挂起的下载任务。';
       }
     } else {
       blockedRun = 0; interRun++;
-      if (interRun >= MAX_INTERRUPTED) {
-        abortReason = '连续 ' + interRun + ' 个下载被取消（' + (r.detail || '未知原因') + '）。'
-          + '通常是 IDM / 迅雷等下载管理器扩展接管了下载。';
+      if (CANCEL_REASONS.test(r.detail || '')) {
+        abortReason = '下载被取消（' + r.detail + '），通常是 IDM / 迅雷等下载管理器扩展接管了下载。'
+          + '已立即停止，避免继续堆积。';
+      } else if (interRun >= MAX_INTERRUPTED) {
+        abortReason = '连续 ' + interRun + ' 个下载失败（' + (r.detail || '未知原因') + '）。已停止任务。';
       }
     }
     return false;

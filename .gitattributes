@@ -1,0 +1,10 @@
+# Windows 批处理必须是 CRLF 行尾，否则 cmd.exe 对多行块的解析会出问题
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# 其余文本文件统一 LF
+*.md text eol=lf
+*.js  text eol=lf
+*.mjs text eol=lf
+*.py  text eol=lf
+*.json text eol=lf

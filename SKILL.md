@@ -1,7 +1,7 @@
 ---
 name: douyin-batch-download
 description: 抖音/快手按博主主页批量下载全部作品。CDP 接管用户已登录的 Chrome，绕过 a_bogus/__NS_hxfalcon 签名风控，捕获作品列表 API 并下载；也可用随附的 Chrome 插件免终端操作（v2.1.0 起支持双平台、直接写盘）。触发词：下载抖音、下载快手、抖音博主、快手博主、批量下载、主页视频、douyin download、kuaishou download。
-version: 2.1.0
+version: 2.1.1
 ---
 
 # 抖音/快手博主作品批量下载（CDP 接管已登录 Chrome）
@@ -156,12 +156,30 @@ await w.close();
 （用户手动删、Chrome 自行清理临时文件）。用"回收站里有没有、总体积对不对"来反推
 是移入回收站还是被永久删除。
 
-### Windows 批处理的行尾（易漏）
+### Windows 批处理的行尾（易漏，且有两个层次的坑）
 
 `.cmd` / `.bat` **必须是 CRLF 行尾**。用工具写出来的文件默认 LF，`cmd.exe` 在
 LF-only + 多行 `if (...)` 块下会解析异常，表现为脚本行为诡异或直接不执行。
-写完务必转 CRLF 并复核，仓库已用 `.gitattributes` 固化（`*.cmd text eol=crlf`）。
-另外中文提示不要放进 `.cmd`（代码页问题），全部交给 Python 输出。
+写完务必转 CRLF 并复核。另外中文提示不要放进 `.cmd`（代码页问题），全部交给 Python 输出。
+
+**第二个坑在 `.gitattributes` 的写法**（2026-09-30 实际踩到并修正）：
+
+| 写法 | 仓库内存储 | `git clone` 得到 | GitHub `Download ZIP` 得到 |
+|---|---|---|---|
+| `*.cmd text eol=crlf` | LF（被规范化） | CRLF ✅ | **LF ❌ 批处理会坏** |
+| `*.cmd -text` | CRLF（原样） | CRLF ✅ | CRLF ✅ |
+
+`text eol=crlf` 只保证 **checkout 时**转换，仓库内仍是 LF；而 GitHub 的
+「Download ZIP」是导出仓库内的原始 blob（不做 attribute 转换）。所以只要
+README 把 ZIP 列为免 git 的安装路径，就必须用 `-text`，否则用户拿到的是坏文件。
+
+复核方法（看仓库内真实存储的字节，而不是工作区）：
+
+```bash
+git show origin/main:tools/xxx.cmd | python -c "import sys;d=sys.stdin.buffer.read();print('CRLF',d.count(b'\r\n'),'LF-only',d.count(b'\n')-d.count(b'\r\n'))"
+```
+
+改成 `-text` 后需 `git add --renormalize .` 才会把 CRLF 重新入库。
 
 ## 步骤与坑（每条都实测踩过）
 

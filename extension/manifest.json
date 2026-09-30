@@ -1,33 +1,29 @@
 {
   "manifest_version": 3,
-  "name": "抖音博主作品批量下载",
-  "version": "2.0.0",
-  "description": "在抖音博主主页一键采集并下载全部作品（视频/图集）。作品列表由页面自身接口捕获，签名由页面自己生成，不接触账号凭证。",
+  "name": "抖音/快手博主作品批量下载",
+  "version": "2.1.0",
+  "description": "在抖音或快手博主主页一键采集并下载全部视频。作品列表由页面自身接口捕获，签名由页面自己生成，不经浏览器下载系统，直接写盘。",
   "permissions": ["storage"],
   "host_permissions": [
-    "https://*.douyin.com/*",
-    "https://*.douyinvod.com/*",
-    "https://*.douyinpic.com/*",
-    "https://*.douyinstatic.com/*",
-    "https://*.iesdouyin.com/*"
+    "https://*/*"
   ],
   "background": { "service_worker": "background.js" },
   "content_scripts": [
     {
-      "matches": ["https://*.douyin.com/*"],
+      "matches": ["https://*.douyin.com/*", "https://*.kuaishou.com/*"],
       "js": ["hook.js"],
       "run_at": "document_start",
       "world": "MAIN"
     },
     {
-      "matches": ["https://*.douyin.com/*"],
+      "matches": ["https://*.douyin.com/*", "https://*.kuaishou.com/*"],
       "js": ["content.js"],
       "run_at": "document_idle"
     }
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "抖音作品批量下载",
+    "default_title": "抖音/快手作品批量下载",
     "default_icon": { "16": "icon16.png", "48": "icon48.png", "128": "icon128.png" }
   },
   "icons": { "16": "icon16.png", "48": "icon48.png", "128": "icon128.png" }

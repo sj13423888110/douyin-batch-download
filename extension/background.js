@@ -19,6 +19,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         items: list,
         includeGallery,
         nickname: msg.nickname || '',
+        platform: msg.platform === 'kuaishou' ? 'kuaishou' : 'douyin',
         ts: Date.now(),
       },
     })

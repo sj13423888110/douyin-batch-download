@@ -1,8 +1,8 @@
 # douyin-batch-download
 
-抖音按博主主页批量下载全部作品。
+抖音 / 快手按博主主页批量下载全部作品。
 
-不逆向签名算法、不碰 Cookie 文件——通过 Chrome DevTools Protocol（CDP）接管你**已经登录抖音的真实 Chrome**，让浏览器自己生成签名、自带登录态，绕开抖音的 `a_bogus` 风控。整个流程一个 Node 脚本完成，无第三方依赖。
+不逆向签名算法、不碰 Cookie 文件——通过 Chrome DevTools Protocol（CDP）接管你**已经登录的真实 Chrome**，让浏览器自己生成签名、自带登录态，绕开抖音 `a_bogus`、快手 `__NS_hxfalcon` 等风控。整个流程一个 Node 脚本完成，无第三方依赖；Chrome 插件则完全不需要任何配置。
 
 ## 它解决什么问题
 
@@ -34,6 +34,8 @@ v1.x 走 `chrome.downloads` API，它的落盘行为受浏览器全局偏好、�
 `tools/fix-chrome-download-prompt.cmd` 是只改那一条浏览器偏好（关 Chrome 后双击、自动备份）的轻量脚本，仍可单独使用。
 
 ## 使用
+
+> **CLI 目前仅支持抖音。** 快手走下面的插件（页面接口结构与抖音差异大，CLI 未适配）。
 
 ```bash
 # 最常用：直接粘贴 App 分享文案（含 v.douyin.com 短链）也可以
@@ -82,6 +84,24 @@ node scripts/dy-dl.mjs "<链接>" \
 
 签名由 Chrome 自己生成，脚本全程不接触 `a_bogus`；下载 CDN 直链不需要 Cookie。
 
+## Chrome 插件（抖音 + 快手，推荐）
+
+`extension/` 目录是免配置的 Chrome 扩展（v2.1.0 起双平台）：
+
+1. `chrome://extensions` 开启开发者模式 → 加载已解压的扩展程序 → 选 `extension/`
+2. 打开博主主页（`douyin.com/user/...` 或 `kuaishou.com/profile/...`）→ 点插件图标 → 开始采集
+3. 「下载全部视频」→ 下载页里选一次保存文件夹 → 直接写盘
+
+工作方式与 CLI 相同——签名由页面自己生成，插件只读页面接口的响应；
+下载不经浏览器下载系统（File System Access 直写），无弹窗、无 `.tmp` 残渣、
+自动跳过已存在文件。详见 `extension/README.md`。
+
+**快手实测参考值**（2026-09-30，一位 351 作品的博主全量）：采集约 2 分钟；
+列表接口 `POST /rest/v/profile/feed`（页面自己带 `__NS_hxfalcon` 签名），
+直链在 `photo.photoUrls[]`，302 调度后免 Cookie 下载。
+注意：快手分页靠 IntersectionObserver，**标签页切到后台就停止翻页**——
+采集期间保持主页标签在前台（插件已内置暂停保护，切回来会自动继续）。
+
 ## 实测参考值
 
 - 采集：36 条约 40 秒（滚动加载），275 条全量约 5-8 分钟
@@ -95,6 +115,8 @@ node scripts/dy-dl.mjs "<链接>" \
 - **图集帖识别**：`duration_ms=0` 的作品是图集帖，其 `play_addr` 是背景音乐而非视频
 - **风控授权会过期**：隔一段时间再连，Chrome 会重新弹确认框
 - **每页 18 条**：滚动触发分页，页面加载完需等待约 9 秒
+- **快手插件仅视频**：图集类作品接口样本未见过，首版不处理；采集期间页面须在前台（IntersectionObserver 在后台标签被 Chrome 冻结）
+- **CLI 不支持快手**：快手接口为页面内 XHR + 动态签名，CLI 的 CDP 直连方案未适配
 
 ## 合规与风险声明
 

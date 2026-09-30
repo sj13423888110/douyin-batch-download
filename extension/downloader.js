@@ -81,7 +81,7 @@ function refreshUI() {
 async function useRoot(handle) {
   rootHandle = handle;
   await kvSet(HANDLE_KEY, handle);
-  const dirName = 'douyin_' + seg(job && job.nickname, 'download');
+  const dirName = (job && job.platform === 'kuaishou' ? 'kuaishou_' : 'douyin_') + seg(job && job.nickname, 'download');
   authDir = await handle.getDirectoryHandle(dirName, { create: true });
   $('reuse').classList.add('hide');
   refreshUI();
@@ -282,7 +282,7 @@ async function init() {
   job = store[JOB_KEY];
   if (!job || !Array.isArray(job.items) || !job.items.length) {
     $('jobInfo').textContent = '没有待下载任务';
-    log('没有待下载任务。请到抖音博主主页打开插件，点「下载全部作品」。', 'fail');
+    log('没有待下载任务。请到抖音/快手博主主页打开插件，点「下载全部作品」。', 'fail');
     return;
   }
   $('jobInfo').textContent =

@@ -1,17 +1,17 @@
 ---
 name: douyin-batch-download
-description: 抖音按博主主页批量下载全部作品。CDP 接管用户已登录的 Chrome，绕过 a_bogus 签名风控，捕获作品列表 API 并下载视频/图集；也可用随附的 Chrome 插件免终端操作。触发词：下载抖音、抖音博主、批量下载抖音、抖音主页视频、douyin download。
-version: 2.0.1
+description: 抖音/快手按博主主页批量下载全部作品。CDP 接管用户已登录的 Chrome，绕过 a_bogus/__NS_hxfalcon 签名风控，捕获作品列表 API 并下载；也可用随附的 Chrome 插件免终端操作（v2.1.0 起支持双平台、直接写盘）。触发词：下载抖音、下载快手、抖音博主、快手博主、批量下载、主页视频、douyin download、kuaishou download。
+version: 2.1.0
 ---
 
-# 抖音博主作品批量下载（CDP 接管已登录 Chrome）
+# 抖音/快手博主作品批量下载（CDP 接管已登录 Chrome）
 
 ## 适用场景
 
-用户给出抖音博主主页链接（`douyin.com/user/MS4wLjABAAAA...`、`v.douyin.com` 短链或 App 分享文案），要求下载该博主的视频。
+用户给出抖音博主主页链接（`douyin.com/user/MS4wLjABAAAA...`、`v.douyin.com` 短链或 App 分享文案）或快手博主主页链接（`kuaishou.com/profile/xxx`），要求下载该博主的视频。
 
 **硬前提**：
-1. 用户已在 Chrome 登录抖音（必须，游客模式被风控挡死）
+1. 用户已在 Chrome 登录抖音（快手网页版不登录也能看，但建议登录）
 2. CLI 版还需：Chrome 已在 `chrome://inspect/#remote-debugging` 勾选 "Allow remote debugging for this browser instance"
 3. 用户明确授权使用其浏览器登录态
 
@@ -28,8 +28,31 @@ version: 2.0.1
 
 | 形态 | 位置 | 特点 |
 |---|---|---|
-| CLI | 仓库 `scripts/dy-dl.mjs` | CDP 接管 + Node 下载。**不走浏览器下载系统，不受下载管理器/浏览器设置干扰** |
-| Chrome 插件 | 仓库 `extension/` | 免终端。但下载走 `chrome.downloads`，受 Chrome 下载设置与下载管理器扩展影响（见下节） |
+| CLI | 仓库 `scripts/dy-dl.mjs` | CDP 接管 + Node 下载，**仅抖音**。不走浏览器下载系统 |
+| Chrome 插件 | 仓库 `extension/` | 免终端，**v2.1.0 起支持抖音 + 快手**，File System Access 直写盘（不经浏览器下载系统） |
+
+## 快手差异（2026-09-30 实测，全部踩坑后确认）
+
+快手网页版机制与抖音差异大，**不要套用抖音经验**：
+
+1. **列表接口不是 graphql**：网上教程普遍写 `POST /graphql` + `visionProfilePhotoList`，
+   已过时。实测首屏到全部翻页都是 `POST /rest/v/profile/feed?__NS_hxfalcon=...`（XHR）。
+   用 `performance.getEntriesByType('resource')` 可核实页面实际发过什么请求。
+2. **滚动容器与滚动方式**：容器是 `.wb-content`（页面唯一 `overflow:auto`）。
+   ❌ 一步 `scrollTop=scrollHeight` 不触发翻页，且继续滚会触发"切换到推荐页"手势
+   （整页跳 `/new-reco`）。✅ 小步 +500px 并派发 `WheelEvent`。
+3. **⚠️ 后台标签分页完全失效**：快手的翻页哨兵 `.loading-more` 是 IntersectionObserver
+   目标，Chrome 对 `document.hidden` 的标签冻结渲染管线 → IO 不触发，怎么滚都翻不了页。
+   症状：count 卡在 20/40 不动。**必须让标签真正可见**（前台 active tab）。
+   这也是插件的边界：采集期间用户切走窗口会暂停——content.js 已内置
+   `document.hidden` 检测，后台时不计停滞（否则会提前误判"采集完成"）。
+4. **字段映射**：直链在 `feeds[].photo.photoUrls[].url`（graphql 时代的 `photoUrl` 是空串）；
+   `timestamp`/`duration` 是**毫秒**（抖音是秒），入库前除以 1000；
+   作者名 `feed.author.name`；每页 20 条；同作品 2 个 URL 是同一文件的不同签名实例（候选冗余）。
+5. **直链可直接下载**：`*.kwaicdn.com`，302 到调度 CDN（如 `wangjuiot.com`）后 200/206，
+   免 Referer/Cookie。URL 的 `pkey` 是时效签名，截断（丢 query）会 403。
+6. **manifest 的 host_permissions 需要 `https://*/*`**：CDN 302 调度目标域名不固定，
+   枚举不完。代价是安装时警告"读取所有网站数据"，README 里已解释原因。
 
 ## CLI 使用
 

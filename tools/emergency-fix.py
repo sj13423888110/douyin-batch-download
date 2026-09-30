@@ -132,36 +132,124 @@ def clear_pending():
 
 
 # ---------- 4. 清理 .tmp 中间文件 ----------
+#
+# 用 Windows 自带的 SHFileOperationW 送回收站，**不依赖任何第三方库**。
+# 早先版本用 send2trash，结果在用户机器上因解释器里没装这个包而整步空转
+# （2026-09-30 实际发生），所以这里改成零依赖实现，并保留两级降级。
 
-def trash_tmp():
+_FO_DELETE = 0x0003
+_FOF_SILENT = 0x0004
+_FOF_NOCONFIRMATION = 0x0010
+_FOF_ALLOWUNDO = 0x0040
+_FOF_NOERRORUI = 0x0400
+
+
+def _make_recycler():
+    """构造「送回收站」函数；环境不支持时返回 None。"""
+    if os.name != "nt":
+        return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class _SHFILEOPSTRUCTW(ctypes.Structure):
+            _fields_ = [
+                ("hwnd", wintypes.HWND),
+                ("wFunc", wintypes.UINT),
+                ("pFrom", wintypes.LPCWSTR),
+                ("pTo", wintypes.LPCWSTR),
+                ("fFlags", ctypes.c_uint16),
+                ("fAnyOperationsAborted", wintypes.BOOL),
+                ("hNameMappings", ctypes.c_void_p),
+                ("lpszProgressTitle", wintypes.LPCWSTR),
+            ]
+
+        fn = ctypes.windll.shell32.SHFileOperationW
+        fn.argtypes = [ctypes.POINTER(_SHFILEOPSTRUCTW)]
+        fn.restype = ctypes.c_int
+
+        def send(paths):
+            # pFrom 必须是「以 \0 分隔、并以双 \0 结尾」的绝对路径串
+            blob = "\0".join(os.path.abspath(p) for p in paths) + "\0\0"
+            op = _SHFILEOPSTRUCTW()
+            op.wFunc = _FO_DELETE
+            op.pFrom = blob
+            op.pTo = None
+            op.fFlags = (_FOF_ALLOWUNDO | _FOF_NOCONFIRMATION
+                         | _FOF_SILENT | _FOF_NOERRORUI)
+            op.fAnyOperationsAborted = False
+            rc = fn(ctypes.byref(op))
+            if rc != 0:
+                raise OSError("SHFileOperationW 返回码 %d" % rc)
+
+        return send
+    except Exception:
+        return None
+
+
+def _recycle(paths):
+    """把一批文件送进回收站，返回「仍留在原地的」路径列表（空=全部成功）。"""
+    if not paths:
+        return []
+    send = _make_recycler()
+    if send is not None:
+        try:
+            send(paths)
+        except Exception:
+            pass
+        return [p for p in paths if os.path.exists(p)]
+
+    # 降级 2：send2trash（若恰好装了）
     try:
         from send2trash import send2trash
     except ImportError:
-        print("  缺少 send2trash，跳过（pip install send2trash 可安装）。")
-        return
+        return list(paths)
+    for p in paths:
+        try:
+            send2trash(p)
+        except Exception:
+            pass
+    return [p for p in paths if os.path.exists(p)]
+
+
+def trash_tmp():
+    """返回 (成功数, 失败文件路径列表)。"""
     if not os.path.isdir(DOWNLOADS):
-        return
-    files = [f for f in os.listdir(DOWNLOADS)
-             if f.lower().endswith(".tmp") and os.path.isfile(os.path.join(DOWNLOADS, f))]
+        return 0, []
+    files = [os.path.join(DOWNLOADS, f) for f in os.listdir(DOWNLOADS)
+             if f.lower().endswith(".tmp")
+             and os.path.isfile(os.path.join(DOWNLOADS, f))]
     if not files:
         print("  Downloads 里没有 .tmp 中间文件。")
-        return
-    ok = 0
+        return 0, []
+
     size = 0
-    for i, f in enumerate(files):
-        p = os.path.join(DOWNLOADS, f)
+    for p in files:
         try:
             size += os.path.getsize(p)
         except OSError:
             pass
-        try:
-            send2trash(p)
-            ok += 1
-        except Exception:
-            pass
-        if (i + 1) % 10 == 0:
-            time.sleep(0.1)
-    print("  已移入回收站 %d/%d 个，合计 %.1f MB" % (ok, len(files), size / 1048576))
+    print("  正在把 %d 个文件（%.1f GB）移入回收站 ..." % (len(files), size / 1073741824))
+
+    remaining = _recycle(files)
+    if remaining:
+        print("  批量未全部成功，剩余的逐个重试 ...")
+        still = []
+        for p in remaining:
+            if p in _recycle([p]):
+                still.append(p)
+        remaining = still
+
+    done = len(files) - len(remaining)
+    print("  结果：成功移入回收站 %d 个，失败 %d 个" % (done, len(remaining)))
+    if remaining:
+        for p in remaining[:8]:
+            print("     失败：%s" % os.path.basename(p))
+        if len(remaining) > 8:
+            print("     ...另有 %d 个" % (len(remaining) - 8))
+        print("     失败通常是文件仍被进程占用（Chrome / 下载管理器未完全退出）。")
+        print("     可手动选中后按 Delete 删除。")
+    return done, remaining
 
 
 def main():
@@ -204,7 +292,7 @@ def main():
 
     print()
     print("[4/4] 清理 Downloads 里的下载中间文件")
-    trash_tmp()
+    n_done, n_fail = trash_tmp()
 
     print()
     print("=" * 62)
@@ -214,7 +302,12 @@ def main():
     print("     —— 插件已升级到 v2.0.0，改成直接写盘：")
     print("        不再经过浏览器下载系统，不会再有「另存为」弹窗，")
     print("        也不再产生 .tmp 残渣，已存在的文件会自动跳过")
-    print("  3. 到 chrome://downloads 点右上角 ⋮ → 清除列表，防止旧记录再被恢复")
+    print("  3.（可选）到 chrome://downloads 清掉已完成的下载历史")
+    print("     未完成的记录上面第 3 步已清理，不必重复操作")
+    if n_fail:
+        print()
+        print("[注意] 有 %d 个中间文件没能移入回收站（多半仍被占用），" % len(n_fail))
+        print("       确认 Chrome 完全退出后重跑本脚本，或手动删除。")
     print("=" * 62)
     return 0
 

@@ -187,6 +187,6 @@ LF-only + 多行 `if (...)` 块下会解析异常，表现为脚本行为诡异�
 
 ## 参考
 
-- 仓库：`https://github.com/3441293738/douyin-batch-download`
+- 仓库：`https://github.com/sj13423888110/douyin-batch-download`（公开，2026-09-30 建立）
 - 本地克隆：`C:\Users\sj134\douyin-batch-download`（含 `tools/fix-chrome-download-prompt.cmd`）
 - 站点经验：仓库 `references/douyin-notes.md`

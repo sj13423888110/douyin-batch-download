@@ -86,11 +86,24 @@ node scripts/dy-dl.mjs "<链接>" \
 
 ## Chrome 插件（抖音 + 快手，推荐）
 
-`extension/` 目录是免配置的 Chrome 扩展（v2.1.0 起双平台）：
+`extension/` 目录是免配置的 Chrome 扩展（v2.1.0 起双平台）。
 
-1. `chrome://extensions` 开启开发者模式 → 加载已解压的扩展程序 → 选 `extension/`
-2. 打开博主主页（`douyin.com/user/...` 或 `kuaishou.com/profile/...`）→ 点插件图标 → 开始采集
-3. 「下载全部视频」→ 下载页里选一次保存文件夹 → 直接写盘
+**第一步：把代码拿到本地**（新电脑 / 重装时）
+
+```bash
+git clone https://github.com/sj13423888110/douyin-batch-download.git
+```
+
+不想用 git 就在仓库页面点 **`Code` → `Download ZIP`** 再解压，得到同样的目录。
+
+**第二步：加载扩展**（插件不上架商店，只能开发者模式加载）
+
+`chrome://extensions` 开启开发者模式 → 加载已解压的扩展程序 → 选 `douyin-batch-download/extension`
+
+**第三步：使用**
+
+1. 打开博主主页（`douyin.com/user/...` 或 `kuaishou.com/profile/...`）→ 点插件图标 → 开始采集
+2. 「下载全部视频」→ 下载页里选一次保存文件夹 → 直接写盘
 
 工作方式与 CLI 相同——签名由页面自己生成，插件只读页面接口的响应；
 下载不经浏览器下载系统（File System Access 直写），无弹窗、无 `.tmp` 残渣、

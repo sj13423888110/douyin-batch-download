@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "抖音博主作品批量下载",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "在抖音博主主页一键采集并下载全部作品（视频/图集）。作品列表由页面自身接口捕获，签名由页面自己生成，不接触账号凭证。",
   "permissions": ["downloads"],
   "host_permissions": [

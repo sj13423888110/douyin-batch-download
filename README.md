@@ -23,7 +23,18 @@
 2. **Windows + Chrome**（其他平台未验证）
 3. Chrome 地址栏打开 `chrome://inspect/#remote-debugging`，勾选 **"Allow remote debugging for this browser instance"**（仅 CLI 需要；插件不需要）
 4. 在这个 Chrome 里**登录抖音**
-5. **重要（插件批量下载）**：到 `chrome://settings/downloads` 关闭 **"下载前询问每个文件的保存位置"**，并暂停 IDM / NeatDownloadManager 等下载管理器扩展——否则每个文件都会弹另存为对话框、或被下载管理器接管取消（`USER_CANCELED`）
+5. **重要（插件批量下载）**：到 `chrome://settings/downloads` 关闭 **"下载前询问每个文件的保存位置"**，并暂停 IDM / NeatDownloadManager 等下载管理器扩展——否则每个文件都会弹另存为对话框、或被下载管理器接管取消（`USER_CANCELED`）。已提供一键修复脚本，见下节。
+
+## 一键修复：关掉「下载前询问保存位置」
+
+这个 Chrome 设置**优先级高于扩展 API**：`chrome.downloads.download({saveAs:false})` 压不住它，所以插件批量下载会逐个弹另存为窗口。用脚本一次改掉：
+
+1. **完全退出 Chrome**（含托盘驻留进程）
+2. 双击 `tools/fix-chrome-download-prompt.cmd`
+
+脚本会等 Chrome 退出后自动完成，改动前备份 `Preferences`。它也会自动处理多 Profile。改完重启 Chrome 即生效，此后浏览器所有下载都不再逐个询问。
+
+> 不想退出 Chrome 的话，手动改只需三步：`chrome://settings/downloads` → 取消勾选「下载前询问每个文件的保存位置」。效果相同。
 
 ## 使用
 

@@ -74,6 +74,7 @@ chrome.runtime.onMessage.addListener((m) => {
   if (m.type === 'progress') { $('count').textContent = m.count; render(m); }
   if (m.type === 'done') { $('count').textContent = m.count; if (m.nickname) $('nickname').textContent = '博主：' + m.nickname; setButtons({ count: m.count }); say('采集完成：' + m.count + ' 条。'); }
   if (m.type === 'dlprogress') say('下载进度 ' + m.done + '/' + m.total + '（成功 ' + m.ok + ' / 失败 ' + m.fail + '）');
+  if (m.type === 'dlabort') say('已中止（进行到 ' + m.done + '/' + m.total + '，成功 ' + m.ok + ' / 失败 ' + m.fail + '）：' + m.reason);
   if (m.type === 'dlend') say('下载结束：成功 ' + m.ok + ' / 失败 ' + m.fail + '，共 ' + m.total + ' 个作品。文件在「下载」目录。');
 });
 

@@ -1,6 +1,10 @@
-# Windows 批处理必须是 CRLF 行尾，否则 cmd.exe 对多行块的解析会出问题
-*.cmd text eol=crlf
-*.bat text eol=crlf
+# Windows 批处理必须是 CRLF 行尾，否则 cmd.exe 对多行块的解析会出问题。
+# 这里用 -text（不转换）而不是 text eol=crlf：
+#   text eol=crlf 会让仓库内存储成 LF，只在 checkout 时转回 CRLF，
+#   于是 git clone 正常、但 GitHub 的 Download ZIP 导出的是 LF 原文 —— 批处理会坏。
+#   -text 让 CRLF 原样入库，clone 与 Download ZIP 拿到的都是 CRLF。
+*.cmd -text
+*.bat -text
 
 # 其余文本文件统一 LF
 *.md text eol=lf

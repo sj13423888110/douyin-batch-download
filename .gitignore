@@ -1,0 +1,15 @@
+# 采集/下载产物不要提交
+_list.json
+*.mp4
+*.m4a
+*.jpg
+*.mp3
+
+# 系统与编辑器
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# 依赖（本工具零依赖，防御性保留）
+node_modules/

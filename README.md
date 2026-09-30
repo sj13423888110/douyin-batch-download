@@ -19,11 +19,11 @@
 
 ## 前提条件
 
-1. **Node.js ≥ 18**（用了原生 `fetch` 和全局 `WebSocket`；在 Node 22 上验证）
-2. **Windows + Chrome**（其他平台未验证，理论上 macOS/Linux 可用，路径处理已用 `os.homedir()` / `process.env.LOCALAPPDATA`）
-3. Chrome 地址栏打开 `chrome://inspect/#remote-debugging`，勾选 **"Allow remote debugging for this browser instance"**
+1. **Node.js ≥ 18**（仅 CLI 需要；插件零依赖，装好即用）
+2. **Windows + Chrome**（其他平台未验证）
+3. Chrome 地址栏打开 `chrome://inspect/#remote-debugging`，勾选 **"Allow remote debugging for this browser instance"**（仅 CLI 需要；插件不需要）
 4. 在这个 Chrome 里**登录抖音**
-5. 首次连接时 Chrome 会弹「要允许远程调试吗？」——点**允许**（并保持 Chrome 在前台）
+5. **重要（插件批量下载）**：到 `chrome://settings/downloads` 关闭 **"下载前询问每个文件的保存位置"**，并暂停 IDM / NeatDownloadManager 等下载管理器扩展——否则每个文件都会弹另存为对话框、或被下载管理器接管取消（`USER_CANCELED`）
 
 ## 使用
 

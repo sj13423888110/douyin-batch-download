@@ -1,7 +1,7 @@
 ---
 name: douyin-batch-download
 description: 抖音按博主主页批量下载全部作品。CDP 接管用户已登录的 Chrome，绕过 a_bogus 签名风控，捕获作品列表 API 并下载视频/图集；也可用随附的 Chrome 插件免终端操作。触发词：下载抖音、抖音博主、批量下载抖音、抖音主页视频、douyin download。
-version: 1.2.0
+version: 1.3.0
 ---
 
 # 抖音博主作品批量下载（CDP 接管已登录 Chrome）
@@ -67,7 +67,49 @@ node scripts/dy-dl.mjs "<链接>" --no-dl                    # 只采集清单�
 2. **IDM / 迅雷 / NeatDownloadManager 等下载管理器扩展会接管下载**
    表现为 `chrome.downloads` 记录 `interrupted` + `USER_CANCELED`，文件落到下载管理器自己的目录、丢子目录。让用户临时停用这些扩展。
 
+3. **⚠️ 雪崩陷阱：`chrome.downloads.download()` 在被询问时「立即返回」**
+   这是 2026-09-30 实际闯祸的设计缺陷，务必守住：
+   当 `prompt_for_download=true` 时，`download()` **不等用户确认就 resolve 一个 id**。
+   如果像这样逐条 await：
+
+   ```js
+   for (const it of list) {
+     await chrome.downloads.download({ url, saveAs: false });   // ← 立刻返回，不阻塞
+     await sleep(600);
+   }
+   ```
+
+   就会以 600ms/个 的速度把**整个清单全部触发出去**。274 个作品 = 274 个挂起下载
+   + 274 个另存为对话框，Chrome UI 被拖死（用户描述"像中病毒一样，无法取消暂停，
+   只能在任务管理器结束任务"），`Downloads` 里堆出 500MB+ 的 UUID 命名 `.tmp` 残渣。
+
+   **正确做法**：每触发一个就核验它**是否真的在传数据**，第一个被拦就中止：
+   ```js
+   // paused 连续 4 次 或 10 秒内 bytesReceived 无增长 → blocked
+   // 首个轮询就看到 bytesReceived 增长 → started（放行，不拖慢）
+   // detail 命中 USER_CANCELED → 立即停（下载管理器接管）
+   ```
+   容忍度必须设成 **1**（不是 3）：环境不对时多触发两个就是多两个对话框。
+
 **Chrome 没有"第一次询问后记住"这种机制**，只有"询问"和"不询问"两态。用户说"希望一次确定、全部下载"，唯一落点是把偏好切成不询问。
+
+### 已经卡死时的收尾
+
+浏览器已被挂起任务拖死时，唯一出路是强杀 + 清场，仓库提供了现成脚本
+`tools/emergency-fix.cmd`（先手动输入 y 确认）：
+1. `taskkill /F /IM chrome.exe /T` 强杀全部进程
+2. 关掉 `prompt_for_download`
+3. 删 `History` 库里 `downloads` 表 `state != 1` 的记录（未完成的挂起项，保留已完成历史）
+4. `Downloads\*.tmp` 移入回收站
+
+Chrome 不会自动重试这些挂起下载，所以强杀后不删记录也不会再产生垃圾，但删掉更清爽。
+
+### Windows 批处理的行尾（易漏）
+
+`.cmd` / `.bat` **必须是 CRLF 行尾**。用工具写出来的文件默认 LF，`cmd.exe` 在
+LF-only + 多行 `if (...)` 块下会解析异常，表现为脚本行为诡异或直接不执行。
+写完务必转 CRLF 并复核，仓库已用 `.gitattributes` 固化（`*.cmd text eol=crlf`）。
+另外中文提示不要放进 `.cmd`（代码页问题），全部交给 Python 输出。
 
 ## 步骤与坑（每条都实测踩过）
 

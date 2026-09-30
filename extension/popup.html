@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  body { width: 340px; margin: 0; padding: 14px; font: 13px/1.5 "Microsoft YaHei", system-ui, sans-serif; color: #161823; background: #fff; }
+  h1 { font-size: 15px; margin: 0 0 2px; }
+  .sub { color: #86909c; font-size: 11px; margin-bottom: 10px; }
+  .card { background: #f7f8fa; border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
+  .num { font-size: 26px; font-weight: 700; color: #fe2c55; }
+  .meta { color: #161823; font-size: 12px; }
+  button { width: 100%; padding: 9px 0; border: 0; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; margin-bottom: 8px; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  #collect { background: #161823; color: #fff; }
+  #dlVideo { background: #fe2c55; color: #fff; }
+  #dlAll { background: #f2f3f5; color: #161823; }
+  .status { font-size: 12px; color: #86909c; min-height: 34px; }
+  label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #4e5969; margin-bottom: 8px; }
+  .warn { background: #fff7e8; border-radius: 6px; padding: 8px 10px; font-size: 11px; color: #b42318; margin-bottom: 10px; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+  <h1>抖音作品批量下载</h1>
+  <div class="sub">在博主主页使用 · 签名由页面自身生成 · 凭证不出浏览器</div>
+
+  <div id="warn" class="warn hidden"></div>
+
+  <div class="card">
+    <span class="num" id="count">–</span> 条作品已捕获
+    <div class="meta" id="nickname"></div>
+  </div>
+
+  <button id="collect">开始采集全部作品（自动滚动）</button>
+  <label><input type="checkbox" id="gal"> 图集帖同时保存图片和音乐</label>
+  <button id="dlVideo" disabled>下载全部视频</button>
+  <button id="dlAll" disabled>下载全部（含图集）</button>
+
+  <div class="status" id="status"></div>
+  <script src="popup.js"></script>
+</body>
+</html>

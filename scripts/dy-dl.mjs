@@ -131,8 +131,11 @@ await new Promise((res, rej) => {
 });
 console.log('CDP 已连接');
 
-const { targetId } = await send('Target.createTarget', { url: 'about:blank', background: true });
+const { targetId } = await send('Target.createTarget', { url: 'about:blank', background: false });
 const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true });
+// 前台窗口必须调到正常尺寸：过小的视口不触发懒加载（2026-09-30 实测 263px 视口时列表高度只有 450px）
+const { windowId } = await send('Browser.getWindowForTarget', { targetId }).catch(() => ({ windowId: null }));
+if (windowId) await send('Browser.setWindowBounds', { windowId, bounds: { width: 1440, height: 900, windowState: 'normal' } }).catch(() => {});
 
 // ---------- 3. 采集作品列表 ----------
 const newBodies = new Set();
@@ -145,6 +148,7 @@ listeners.push((m) => {
 await send('Page.enable', {}, sessionId);
 await send('Network.enable', {}, sessionId);
 await send('Page.navigate', { url: `https://www.douyin.com/user/${SEC}` }, sessionId);
+await send('Page.bringToFront', {}, sessionId).catch(() => {});
 console.log('已打开博主主页，等待加载...');
 await sleep(9000);
 
@@ -170,8 +174,11 @@ await drain();
 
 let stagnant = 0;
 let prev = -1;
+// 关键：抖音网页版的滚动发生在 .route-scroll-container 容器里，
+// window.scrollBy(0,1000) 滚不动它——2026-09-30 实测，274 条全靠容器滚动触发分页
+const SCROLL = '(() => { const c = document.querySelector(".route-scroll-container"); if (c) c.scrollTop = c.scrollHeight; window.scrollBy(0, 1000); return "ok"; })()';
 while (raw.size < MAX) {
-  await send('Runtime.evaluate', { expression: 'window.scrollBy(0, 1000); "ok"' }, sessionId).catch(() => {});
+  await send('Runtime.evaluate', { expression: SCROLL }, sessionId).catch(() => {});
   await sleep(1700);
   await drain();
   stagnant = raw.size === prev ? stagnant + 1 : 0;

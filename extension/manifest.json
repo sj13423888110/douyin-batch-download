@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "抖音博主作品批量下载",
+  "version": "1.0.0",
+  "description": "在抖音博主主页一键采集并下载全部作品（视频/图集）。作品列表由页面自身接口捕获，签名由页面自己生成，不接触账号凭证。",
+  "permissions": ["downloads"],
+  "host_permissions": [
+    "https://*.douyin.com/*",
+    "https://*.douyinvod.com/*",
+    "https://*.douyinpic.com/*",
+    "https://*.douyinstatic.com/*",
+    "https://*.iesdouyin.com/*"
+  ],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["https://*.douyin.com/*"],
+      "js": ["hook.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://*.douyin.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "抖音作品批量下载",
+    "default_icon": { "16": "icon16.png", "48": "icon48.png", "128": "icon128.png" }
+  },
+  "icons": { "16": "icon16.png", "48": "icon48.png", "128": "icon128.png" }
+}
